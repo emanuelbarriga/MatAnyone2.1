@@ -14,7 +14,7 @@ column_limit = 100
 name = "matanyone2"
 version = "1.0.0"
 authors = [{ name = "Peiqing Yang", email = "peiqingyang99@outlook.com" }]
-description = ""
+description = "Scaling Video Matting via a Learned Quality Evaluator"
 readme = "README.md"
 requires-python = ">=3.10"
 classifiers = [
@@ -53,8 +53,34 @@ dependencies = [
   'kornia',
 ]
 
+[project.scripts]
+matanyone2 = "matanyone2.cli:app"
+
 [tool.hatch.build.targets.wheel]
 packages = ["matanyone2"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"matanyone2/config" = "matanyone2/config"
+
+[tool.hatch.build.targets.sdist]
+include = [
+  "matanyone2/",
+  "inference_matanyone2.py",
+  "README.md",
+  "LICENSE.txt",
+]
+
+[tool.uv]
+no-build-isolation-package = ["thinplate"]
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu128" }
+torchvision = { index = "pytorch-cu128" }
 
 [project.urls]
 "Homepage" = "https://github.com/pq-yang/MatAnyone2"
