@@ -2,6 +2,7 @@ import sys
 sys.path.append("../")
 sys.path.append("../../")
 
+import gc
 import os
 import json
 import time
@@ -11,6 +12,7 @@ import imageio
 import argparse
 from PIL import Image
 import shutil
+import tempfile
 
 import cv2
 import torch
@@ -22,7 +24,7 @@ from tools.interact_tools import SamControler
 from tools.misc import get_device
 from tools.download_util import load_file_from_url
 
-from matanyone2_wrapper import matanyone2
+from matanyone2_wrapper import matanyone2, matanyone2_streaming
 from matanyone2.utils.get_default_model import get_matanyone2_model
 from matanyone2.inference.inference_core import InferenceCore
 from hydra.core.global_hydra import GlobalHydra
@@ -107,9 +109,65 @@ def get_frames_from_image(image_input, image_state):
                         gr.update(visible=False), gr.update(visible=True), \
                         gr.update(visible=True)
 
+class DiskFrameCache:
+    """
+    Memory-efficient frame storage that keeps frames on disk.
+    Loads frames on-demand instead of keeping all in RAM.
+    """
+    def __init__(self, cache_dir, frame_count):
+        self.cache_dir = cache_dir
+        self.frame_count = frame_count
+        self._cache = {}  # Small LRU cache for recently accessed frames
+        self._cache_size = 5  # Keep only 5 frames in memory
+    
+    def __len__(self):
+        return self.frame_count
+    
+    def __getitem__(self, idx):
+        if isinstance(idx, slice):
+            # Handle slice access for processing
+            start, stop, step = idx.indices(self.frame_count)
+            return [self._load_frame(i) for i in range(start, stop, step or 1)]
+        
+        return self._load_frame(idx)
+    
+    def _load_frame(self, idx):
+        if idx in self._cache:
+            return self._cache[idx]
+        
+        frame_path = os.path.join(self.cache_dir, f"{str(idx).zfill(6)}.png")
+        frame = cv2.imread(frame_path)
+        if frame is not None:
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        
+        # Simple LRU: remove oldest if cache is full
+        if len(self._cache) >= self._cache_size:
+            oldest_key = next(iter(self._cache))
+            del self._cache[oldest_key]
+        
+        self._cache[idx] = frame
+        return frame
+    
+    def copy(self):
+        """Return self for compatibility - painted_images uses same cache."""
+        return self
+
+
+def _cleanup_system_memory():
+    """Force garbage collection and clear GPU memory."""
+    gc.collect()
+    if torch.backends.mps.is_available():
+        torch.mps.empty_cache()
+    elif torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+
 # extract frames from upload video
 def get_frames_from_video(video_input, video_state):
     """
+    Memory-efficient video loading that saves frames to disk.
+    Uses DiskFrameCache for on-demand frame loading.
+    
     Args:
         video_path:str
         timestamp:float64
@@ -117,8 +175,14 @@ def get_frames_from_video(video_input, video_state):
         [[0:nearest_frame], [nearest_frame:], nearest_frame]
     """
     video_path = video_input
-    frames = []
     user_name = time.time()
+    
+    # Create cache directory for this video's frames
+    video_stem = os.path.splitext(os.path.basename(video_path))[0]
+    cache_dir = os.path.join(".", "frame_cache", f"{video_stem}_{int(user_name)}")
+    if os.path.exists(cache_dir):
+        shutil.rmtree(cache_dir)
+    os.makedirs(cache_dir, exist_ok=True)
 
     # extract Audio
     try:
@@ -128,49 +192,72 @@ def get_frames_from_video(video_input, video_state):
         print(f"Audio extraction error: {str(e)}")
         audio_path = ""  # Set to "" if extraction fails
     
-    # extract frames
+    # extract frames and save to disk immediately (streaming approach)
+    frame_count = 0
+    first_frame = None
+    image_size = None
+    fps = 30  # default
+    
     try:
         cap = cv2.VideoCapture(video_path)
         fps = cap.get(cv2.CAP_PROP_FPS)
+        
         while cap.isOpened():
             ret, frame = cap.read()
-            if ret == True:
-                current_memory_usage = psutil.virtual_memory().percent
-                frames.append(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
-                if current_memory_usage > 90:
-                    break
-            else:
+            if not ret:
                 break
+            
+            # Save frame to disk immediately instead of keeping in RAM
+            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            frame_path = os.path.join(cache_dir, f"{str(frame_count).zfill(6)}.png")
+            cv2.imwrite(frame_path, frame)  # Save as BGR for cv2
+            
+            if frame_count == 0:
+                first_frame = frame_rgb.copy()
+                image_size = (frame_rgb.shape[0], frame_rgb.shape[1])
+            
+            frame_count += 1
+            
+            # Cleanup memory periodically
+            if frame_count % 50 == 0:
+                _cleanup_system_memory()
+        
+        cap.release()
+        
     except (OSError, TypeError, ValueError, KeyError, SyntaxError) as e:
         print("read_frame_source:{} error. {}\n".format(video_path, str(e)))
-    image_size = (frames[0].shape[0],frames[0].shape[1]) 
-
-    # [remove for local demo] resize if resolution too big
-    # if image_size[0]>=1080 and image_size[0]>=1080:
-    #     scale = 1080 / min(image_size)
-    #     new_w = int(image_size[1] * scale)
-    #     new_h = int(image_size[0] * scale)
-    #     # update frames
-    #     frames = [cv2.resize(f, (new_w, new_h), interpolation=cv2.INTER_AREA) for f in frames]
-    #     # update image_size
-    #     image_size = (frames[0].shape[0],frames[0].shape[1]) 
-
-    # initialize video_state
+    
+    if frame_count == 0 or first_frame is None:
+        raise ValueError(f"Could not read any frames from video: {video_path}")
+    
+    # Use disk-based frame cache instead of RAM list
+    frames_cache = DiskFrameCache(cache_dir, frame_count)
+    
+    # initialize video_state with disk-based frame storage
     video_state = {
         "user_name": user_name,
         "video_name": os.path.split(video_path)[-1],
-        "origin_images": frames,
-        "painted_images": frames.copy(),
-        "masks": [np.zeros((frames[0].shape[0],frames[0].shape[1]), np.uint8)]*len(frames),
-        "logits": [None]*len(frames),
+        "origin_images": frames_cache,
+        "painted_images": frames_cache,  # Share same cache
+        "masks": [np.zeros((image_size[0], image_size[1]), np.uint8)] * frame_count,
+        "logits": [None] * frame_count,
         "select_frame_number": 0,
         "fps": fps,
-        "audio": audio_path
-        }
-    video_info = "Video Name: {},\nFPS: {},\nTotal Frames: {},\nImage Size:{}".format(video_state["video_name"], round(video_state["fps"], 0), len(frames), image_size)
+        "audio": audio_path,
+        "frame_cache_dir": cache_dir  # Store for cleanup later
+    }
+    
+    video_info = "Video Name: {},\nFPS: {},\nTotal Frames: {},\nImage Size:{}".format(
+        video_state["video_name"], round(video_state["fps"], 0), frame_count, image_size
+    )
+    
+    # Cleanup memory after video loading
+    _cleanup_system_memory()
+    
     model.samcontroler.sam_controler.reset_image() 
-    model.samcontroler.sam_controler.set_image(video_state["origin_images"][0])
-    return video_state, video_info, video_state["origin_images"][0], gr.update(visible=True, maximum=len(frames), value=1), gr.update(visible=False, maximum=len(frames), value=len(frames)), \
+    model.samcontroler.sam_controler.set_image(first_frame)
+    
+    return video_state, video_info, first_frame, gr.update(visible=True, maximum=frame_count, value=1), gr.update(visible=False, maximum=frame_count, value=frame_count), \
                         gr.update(visible=True), gr.update(visible=True), \
                         gr.update(visible=True), gr.update(visible=True),\
                         gr.update(visible=True), gr.update(visible=False, value=None), \
@@ -358,21 +445,24 @@ def video_matting(video_state, interactive_state, mask_dropdown, erode_kernel_si
     # operation error
     if len(np.unique(template_mask))==1:
         template_mask[0][0]=1
-    _, alpha = matanyone2(matanyone_processor, following_frames, template_mask*255, r_erode=erode_kernel_size, r_dilate=dilate_kernel_size, return_foreground=False)
-
+    
+    # Use streaming version that saves directly to disk (memory-efficient)
     video_stem = os.path.splitext(video_state["video_name"])[0]
     alpha_dir = os.path.join(".", "results", f"{video_stem}_alpha_png")
     if os.path.exists(alpha_dir):
         shutil.rmtree(alpha_dir)
-    os.makedirs(alpha_dir, exist_ok=True)
+    
+    # Process frames and save directly to disk - constant RAM usage
+    frame_count, alpha_sequence, _ = matanyone2_streaming(
+        matanyone_processor, 
+        following_frames, 
+        template_mask * 255, 
+        output_dir=alpha_dir,
+        r_erode=erode_kernel_size, 
+        r_dilate=dilate_kernel_size, 
+        return_foreground=False
+    )
 
-    for i, alpha_frame in enumerate(alpha):
-        cv2.imwrite(
-            os.path.join(alpha_dir, f"{str(i).zfill(5)}.png"),
-            alpha_frame[:, :, 0],
-        )
-
-    alpha_sequence = [os.path.join(alpha_dir, f"{str(i).zfill(5)}.png") for i in range(len(alpha))]
     alpha_output = shutil.make_archive(alpha_dir, "zip", alpha_dir)
     with Image.open(alpha_sequence[0]) as alpha_image:
         alpha_preview = alpha_image.copy()
@@ -460,7 +550,20 @@ def restart():
         gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), \
         gr.update(visible=False), gr.update(visible=False, choices=[], value=[]), "", gr.update(visible=False)
 
-def restart_video():
+def restart_video(video_state=None):
+    # Cleanup frame cache directory if it exists
+    if video_state and isinstance(video_state, dict) and "frame_cache_dir" in video_state:
+        cache_dir = video_state.get("frame_cache_dir")
+        if cache_dir and os.path.exists(cache_dir):
+            try:
+                shutil.rmtree(cache_dir)
+                print(f"Cleaned up frame cache: {cache_dir}")
+            except Exception as e:
+                print(f"Warning: Could not clean up frame cache: {e}")
+    
+    # Force memory cleanup
+    _cleanup_system_memory()
+    
     return {
             "user_name": "",
             "video_name": "",
@@ -472,6 +575,7 @@ def restart_video():
             "select_frame_number": 0,
             "fps": 30,
             "audio": "",
+            "frame_cache_dir": None,
         }, {
             "inference_times": 0,
             "negative_click_times" : 0,
