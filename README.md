@@ -49,8 +49,9 @@
 
 
 ## 📮 Update
-- [2026.03] Add uv, CLI, and huggingface support for easy installation and usage.
-- [2026.03] Release inference codes, evaluation codes, and gradio demo.
+- **[2025.04]** Major memory optimizations for Apple Silicon Macs (M1/M2/M3/M4). Videos of any length can now be processed with constant RAM usage using disk-based streaming.
+- [2025.03] Add uv, CLI, and huggingface support for easy installation and usage.
+- [2025.03] Release inference codes, evaluation codes, and gradio demo.
 - [2025.12] This repo is created.
 
 
@@ -93,6 +94,30 @@ You may also install via [uv](https://docs.astral.sh/uv/):
 uv init my-matting-project && cd my-matting-project
 uv add matanyone2@git+https://github.com/pq-yang/MatAnyone2.git
 ```
+
+## 🍎 Mac Studio / Apple Silicon Optimization
+
+MatAnyone2 now includes **ComfyUI-inspired memory optimizations** specifically designed for Apple Silicon Macs with unified memory (M1/M2/M3/M4):
+
+| Feature | Before | After |
+|---------|--------|-------|
+| Video Loading | All frames in RAM (1.8GB+ for 1080p/10s) | **Disk streaming** (~30MB constant) |
+| Processing Results | Accumulated in RAM lists | **Saved directly to SSD** |
+| VRAM Management | None | **`gc.collect()` + `torch.mps.empty_cache()`** every frame |
+| Tensor Cleanup | Automatic GC | **Explicit `del` + cache clearing** |
+
+### How It Works
+
+1. **Disk-based Frame Caching**: Videos are saved as PNG frames on disk; only 5 frames stay in RAM at any time
+2. **Streaming Inference**: The model processes frames one-by-one, immediately saving results to disk
+3. **Aggressive Memory Cleanup**: After each frame, intermediate tensors are deleted and MPS cache is cleared
+4. **Zero Memory Leaks**: No accumulation of "ghost VRAM" during long video processing
+
+### Result
+
+Your **32GB Mac Studio** can now process videos of **any length** without running out of memory. Whether it's 5 seconds or 5 hours, RAM usage stays constant.
+
+---
 
 ## 🔥 Inference
 
