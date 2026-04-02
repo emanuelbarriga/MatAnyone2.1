@@ -10,6 +10,7 @@ import ffmpeg
 import imageio
 import argparse
 from PIL import Image
+import shutil
 
 import cv2
 import torch
@@ -33,7 +34,8 @@ def parse_augment():
     parser = argparse.ArgumentParser()
     parser.add_argument('--device', type=str, default=None)
     parser.add_argument('--sam_model_type', type=str, default="vit_h")
-    parser.add_argument('--port', type=int, default=8000, help="only useful when running gradio applications")  
+    parser.add_argument('--port', type=int, default=8000, help="only useful when running gradio applications")
+    parser.add_argument('--listen', type=str, default="127.0.0.1", help="IP address to listen on (use 0.0.0.0 for local network access)")
     parser.add_argument('--mask_save', default=False)
     args = parser.parse_args()
     
@@ -171,10 +173,11 @@ def get_frames_from_video(video_input, video_state):
     return video_state, video_info, video_state["origin_images"][0], gr.update(visible=True, maximum=len(frames), value=1), gr.update(visible=False, maximum=len(frames), value=len(frames)), \
                         gr.update(visible=True), gr.update(visible=True), \
                         gr.update(visible=True), gr.update(visible=True),\
-                        gr.update(visible=True), gr.update(visible=True), \
-                        gr.update(visible=True), gr.update(visible=False), \
+                        gr.update(visible=True), gr.update(visible=False, value=None), \
+                        gr.update(visible=False, value=None), gr.update(visible=False), \
                         gr.update(visible=False), gr.update(visible=True), \
-                        gr.update(visible=True)
+                        gr.update(visible=True), [], gr.update(visible=False, minimum=1, maximum=1, value=1), \
+                        gr.update(visible=False, value="")
 
 # get the select frame from gradio slider
 def select_video_template(image_selection_slider, video_state, interactive_state):
@@ -188,22 +191,34 @@ def select_video_template(image_selection_slider, video_state, interactive_state
 
     return video_state["painted_images"][image_selection_slider], video_state, interactive_state
 
-def select_image_template(image_selection_slider, video_state, interactive_state):
+# get the select frame from gradio slider for images
+def select_image_template(image_selection_slider, image_state, interactive_state):
 
-    image_selection_slider = 0 # fixed for image
-    video_state["select_frame_number"] = image_selection_slider
+    image_selection_slider -= 1
+    image_state["select_frame_number"] = image_selection_slider
 
     # once select a new template frame, set the image in sam
     model.samcontroler.sam_controler.reset_image()
-    model.samcontroler.sam_controler.set_image(video_state["origin_images"][image_selection_slider])
+    model.samcontroler.sam_controler.set_image(image_state["origin_images"][image_selection_slider])
 
-    return video_state["painted_images"][image_selection_slider], video_state, interactive_state
+    return image_state["painted_images"][image_selection_slider], image_state, interactive_state
 
 # set the tracking end frame
 def get_end_number(track_pause_number_slider, video_state, interactive_state):
     interactive_state["track_end_number"] = track_pause_number_slider
 
     return video_state["painted_images"][track_pause_number_slider],interactive_state
+
+def select_alpha_frame(alpha_sequence, alpha_frame_slider):
+    if not alpha_sequence:
+        return None, gr.update(visible=False, value="")
+
+    alpha_frame_slider = max(1, min(int(alpha_frame_slider), len(alpha_sequence)))
+    alpha_path = alpha_sequence[alpha_frame_slider - 1]
+    with Image.open(alpha_path) as alpha_image:
+        alpha_preview = alpha_image.copy()
+
+    return alpha_preview, gr.update(visible=True, value=f"Frame {alpha_frame_slider}/{len(alpha_sequence)}")
 
 # use sam to get the mask
 def sam_refine(video_state, point_prompt, click_state, interactive_state, evt:gr.SelectData):
@@ -343,12 +358,32 @@ def video_matting(video_state, interactive_state, mask_dropdown, erode_kernel_si
     # operation error
     if len(np.unique(template_mask))==1:
         template_mask[0][0]=1
-    foreground, alpha = matanyone2(matanyone_processor, following_frames, template_mask*255, r_erode=erode_kernel_size, r_dilate=dilate_kernel_size)
+    _, alpha = matanyone2(matanyone_processor, following_frames, template_mask*255, r_erode=erode_kernel_size, r_dilate=dilate_kernel_size, return_foreground=False)
 
-    foreground_output = generate_video_from_frames(foreground, output_path="./results/{}_fg.mp4".format(video_state["video_name"]), fps=fps, audio_path=audio_path) # import video_input to name the output video
-    alpha_output = generate_video_from_frames(alpha, output_path="./results/{}_alpha.mp4".format(video_state["video_name"]), fps=fps, gray2rgb=True, audio_path=audio_path) # import video_input to name the output video
-    
-    return foreground_output, alpha_output
+    video_stem = os.path.splitext(video_state["video_name"])[0]
+    alpha_dir = os.path.join(".", "results", f"{video_stem}_alpha_png")
+    if os.path.exists(alpha_dir):
+        shutil.rmtree(alpha_dir)
+    os.makedirs(alpha_dir, exist_ok=True)
+
+    for i, alpha_frame in enumerate(alpha):
+        cv2.imwrite(
+            os.path.join(alpha_dir, f"{str(i).zfill(5)}.png"),
+            alpha_frame[:, :, 0],
+        )
+
+    alpha_sequence = [os.path.join(alpha_dir, f"{str(i).zfill(5)}.png") for i in range(len(alpha))]
+    alpha_output = shutil.make_archive(alpha_dir, "zip", alpha_dir)
+    with Image.open(alpha_sequence[0]) as alpha_image:
+        alpha_preview = alpha_image.copy()
+
+    return (
+        gr.update(value=alpha_preview, visible=True),
+        gr.update(value=alpha_output, visible=True),
+        alpha_sequence,
+        gr.update(visible=True, minimum=1, maximum=len(alpha_sequence), value=1),
+        gr.update(visible=True, value=f"Frame 1/{len(alpha_sequence)}"),
+    )
 
 
 def add_audio_to_video(video_path, audio_path, output_path):
@@ -424,6 +459,35 @@ def restart():
         gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), \
         gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), \
         gr.update(visible=False), gr.update(visible=False, choices=[], value=[]), "", gr.update(visible=False)
+
+def restart_video():
+    return {
+            "user_name": "",
+            "video_name": "",
+            "origin_images": None,
+            "painted_images": None,
+            "masks": None,
+            "inpaint_masks": None,
+            "logits": None,
+            "select_frame_number": 0,
+            "fps": 30,
+            "audio": "",
+        }, {
+            "inference_times": 0,
+            "negative_click_times" : 0,
+            "positive_click_times": 0,
+            "mask_save": args.mask_save,
+            "multi_mask": {
+                "mask_names": [],
+                "masks": []
+            },
+            "track_end_number": None,
+        }, [[],[]], None, None, [], \
+        gr.update(visible=False, minimum=1, maximum=1, value=1), gr.update(visible=False, value=""), None, \
+        gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), \
+        gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False, value=None), \
+        gr.update(visible=False, value=None), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), \
+        gr.update(visible=False, choices=[], value=[]), "", gr.update(visible=False)
 
 # args, defined in track_anything.py
 args = parse_augment()
@@ -679,6 +743,7 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=my_custom_css) as demo:
     with gr.Tabs():
         with gr.TabItem("Video"):
             click_state = gr.State([[],[]])
+            alpha_sequence_state = gr.State([])
 
             interactive_state = gr.State({
                 "inference_times": 0,
@@ -776,11 +841,13 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=my_custom_css) as demo:
                 # output video
                 with gr.Row(equal_height=True):
                     with gr.Column(scale=2):
-                        foreground_video_output = gr.Video(label="Foreground Output", visible=False, elem_classes="video")
-                        foreground_output_button = gr.Button(value="Foreground Output", visible=False, elem_classes="new_button")
+                        foreground_video_output = gr.Image(type="pil", label="Alpha Preview", visible=False, elem_classes="image")
+                        alpha_frame_slider = gr.Slider(minimum=1, maximum=1, step=1, value=1, label="Alpha Sequence Frame", info="Scrub through the exported alpha PNG sequence", visible=False)
+                        alpha_frame_info = gr.Textbox(label="Alpha Frame Info", visible=False)
+                        foreground_output_button = gr.Button(value="Alpha Preview", visible=False, elem_classes="new_button")
                     with gr.Column(scale=2):
-                        alpha_video_output = gr.Video(label="Alpha Output", visible=False, elem_classes="video")
-                        alpha_output_button = gr.Button(value="Alpha Mask Output", visible=False, elem_classes="new_button")
+                        alpha_video_output = gr.File(label="Alpha PNG Sequence", visible=False)
+                        alpha_output_button = gr.Button(value="Alpha PNG Sequence", visible=False, elem_classes="new_button")
                 
 
             # first step: get the video information 
@@ -791,7 +858,8 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=my_custom_css) as demo:
                 ],
                 outputs=[video_state, video_info, template_frame,
                         image_selection_slider, track_pause_number_slider, point_prompt, clear_button_click, add_mask_button, matting_button, template_frame,
-                        foreground_video_output, alpha_video_output, foreground_output_button, alpha_output_button, mask_dropdown, step2_title]
+                        foreground_video_output, alpha_video_output, foreground_output_button, alpha_output_button, mask_dropdown, step2_title,
+                        alpha_sequence_state, alpha_frame_slider, alpha_frame_info]
             )   
 
             # second step: select images from slider
@@ -826,8 +894,15 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=my_custom_css) as demo:
             matting_button.click(
                 fn=video_matting,
                 inputs=[video_state, interactive_state, mask_dropdown, erode_kernel_size, dilate_kernel_size, model_selection],
-                outputs=[foreground_video_output, alpha_video_output]
+                outputs=[foreground_video_output, alpha_video_output, alpha_sequence_state, alpha_frame_slider, alpha_frame_info]
             )
+
+            alpha_frame_slider.release(
+                fn=select_alpha_frame,
+                inputs=[alpha_sequence_state, alpha_frame_slider],
+                outputs=[foreground_video_output, alpha_frame_info],
+                queue=False,
+                show_progress=False)
 
             # click to get mask
             mask_dropdown.change(
@@ -838,13 +913,14 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=my_custom_css) as demo:
             
             # clear input
             video_input.change(
-                fn=restart,
+                fn=restart_video,
                 inputs=[],
                 outputs=[ 
                     video_state,
                     interactive_state,
                     click_state,
                     foreground_video_output, alpha_video_output,
+                    alpha_sequence_state, alpha_frame_slider, alpha_frame_info,
                     template_frame,
                     image_selection_slider , track_pause_number_slider,point_prompt, clear_button_click, 
                     add_mask_button, matting_button, template_frame, foreground_video_output, alpha_video_output, remove_mask_button, foreground_output_button, alpha_output_button, mask_dropdown, video_info, step2_title
@@ -853,13 +929,14 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=my_custom_css) as demo:
                 show_progress=False)
             
             video_input.clear(
-                fn=restart,
+                fn=restart_video,
                 inputs=[],
                 outputs=[ 
                     video_state,
                     interactive_state,
                     click_state,
                     foreground_video_output, alpha_video_output,
+                    alpha_sequence_state, alpha_frame_slider, alpha_frame_info,
                     template_frame,
                     image_selection_slider , track_pause_number_slider,point_prompt, clear_button_click, 
                     add_mask_button, matting_button, template_frame, foreground_video_output, alpha_video_output, remove_mask_button, foreground_output_button, alpha_output_button, mask_dropdown, video_info, step2_title
@@ -1088,4 +1165,4 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=my_custom_css) as demo:
     gr.Markdown(article)
 
 demo.queue()
-demo.launch(debug=True, share=True)
+demo.launch(debug=True, share=True, server_name=args.listen, server_port=args.port)

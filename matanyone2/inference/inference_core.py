@@ -483,10 +483,10 @@ class InferenceCore:
         os.makedirs(output_path, exist_ok=True)
         if suffix:
             video_name = f"{video_name}_{suffix}"
-        if save_image:
-            os.makedirs(f"{output_path}/{video_name}", exist_ok=True)
-            os.makedirs(f"{output_path}/{video_name}/pha", exist_ok=True)
-            os.makedirs(f"{output_path}/{video_name}/fgr", exist_ok=True)
+        # Always create PNG directories
+        os.makedirs(f"{output_path}/{video_name}", exist_ok=True)
+        os.makedirs(f"{output_path}/{video_name}/pha", exist_ok=True)
+        os.makedirs(f"{output_path}/{video_name}/fgr", exist_ok=True)
 
         mask = np.array(Image.open(mask_path).convert("L"))
         if r_dilate > 0:
@@ -502,12 +502,8 @@ class InferenceCore:
 
         bgr = (np.array([120, 255, 155], dtype=np.float32) / 255).reshape((1, 1, 3))
         objects = [1]
-
-        phas = []
-        fgrs = []
         for ti in tqdm(range(length)):
             image = vframes[ti]
-            image_np = np.array(image.permute(1, 2, 0))
             image = (image / 255.0).float().to(self.device)
 
             if ti == 0:
@@ -520,31 +516,29 @@ class InferenceCore:
                     output_prob = self.step(image)
 
             mask = self.output_prob_to_mask(output_prob)
-            pha = mask.unsqueeze(2).cpu().numpy()
-            com_np = image_np / 255.0 * pha + bgr * (1 - pha)
 
             if ti > (n_warmup - 1):
+                # Only convert to numpy after warmup
+                image_np = np.array(vframes[ti].permute(1, 2, 0))
+                pha = mask.unsqueeze(2).cpu().numpy()
+                com_np = image_np / 255.0 * pha + bgr * (1 - pha)
+                
                 com_np = (com_np * 255).astype(np.uint8)
                 pha = (pha * 255).astype(np.uint8)
-                fgrs.append(com_np)
-                phas.append(pha)
-                if save_image:
-                    cv2.imwrite(
-                        f"{output_path}/{video_name}/pha/{str(ti - n_warmup).zfill(5)}.png",
-                        pha,
-                    )
-                    cv2.imwrite(
-                        f"{output_path}/{video_name}/fgr/{str(ti - n_warmup).zfill(5)}.png",
-                        com_np[..., [2, 1, 0]],
-                    )
+                
+                # Export PNG sequences directly
+                cv2.imwrite(
+                    f"{output_path}/{video_name}/pha/{str(ti - n_warmup).zfill(5)}.png",
+                    pha,
+                )
+                cv2.imwrite(
+                    f"{output_path}/{video_name}/fgr/{str(ti - n_warmup).zfill(5)}.png",
+                    com_np[..., [2, 1, 0]],
+                )
 
-        fgrs = np.array(fgrs)
-        phas = np.array(phas)
+        print(f'PNG sequences saved to {output_path}/{video_name}/')
         
-        fgr_filename = f"{output_path}/{video_name}_fgr.mp4"
-        alpha_filename = f"{output_path}/{video_name}_pha.mp4"
+        pha_dir = f"{output_path}/{video_name}/pha"
+        fgr_dir = f"{output_path}/{video_name}/fgr"
         
-        imageio.mimwrite(fgr_filename, fgrs, fps=fps, quality=7)
-        imageio.mimwrite(alpha_filename, phas, fps=fps, quality=7)
-        
-        return (fgr_filename,alpha_filename)
+        return (fgr_dir, pha_dir)

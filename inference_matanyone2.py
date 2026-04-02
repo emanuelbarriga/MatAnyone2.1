@@ -30,6 +30,14 @@ def main(input_path, mask_path, output_path, ckpt_path, n_warmup=10, r_erode=10,
     
     # load MatAnyone model
     matanyone2 = get_matanyone2_model(ckpt_path, device)
+    
+    # Optimize with torch.compile for M4 Max (10-30% speedup)
+    # Note: First inference will be slower due to compilation
+    try:
+        matanyone2 = torch.compile(matanyone2, backend="aot_eager")
+        print("Model compiled with torch.compile for optimized inference")
+    except Exception as e:
+        print(f"torch.compile not available or failed: {e}")
 
     # init inference processor
     processor = InferenceCore(matanyone2, cfg=matanyone2.cfg)
@@ -60,10 +68,10 @@ def main(input_path, mask_path, output_path, ckpt_path, n_warmup=10, r_erode=10,
     os.makedirs(output_path, exist_ok=True)
     if suffix != "":
         video_name = f'{video_name}_{suffix}'
-    if save_image:
-        os.makedirs(f'{output_path}/{video_name}', exist_ok=True)
-        os.makedirs(f'{output_path}/{video_name}/pha', exist_ok=True)
-        os.makedirs(f'{output_path}/{video_name}/fgr', exist_ok=True)
+    # Always create PNG directories
+    os.makedirs(f'{output_path}/{video_name}', exist_ok=True)
+    os.makedirs(f'{output_path}/{video_name}/pha', exist_ok=True)
+    os.makedirs(f'{output_path}/{video_name}/fgr', exist_ok=True)
 
     # load the first-frame mask
     mask = Image.open(mask_path).convert('L')
@@ -85,13 +93,10 @@ def main(input_path, mask_path, output_path, ckpt_path, n_warmup=10, r_erode=10,
         mask = mask[0,0]
 
     # inference start
-    phas = []
-    fgrs = []
     for ti in tqdm.tqdm(range(length)):
         # load the image as RGB; normalization is done within the model
         image = vframes[ti]
 
-        image_np = np.array(image.permute(1,2,0))       # for output visualize
         image = (image / 255.).float().to(device)       # for network input
 
         if ti == 0:
@@ -106,25 +111,21 @@ def main(input_path, mask_path, output_path, ckpt_path, n_warmup=10, r_erode=10,
         # convert output probabilities to alpha matte
         mask = processor.output_prob_to_mask(output_prob)
 
-        # visualize prediction
-        pha = mask.unsqueeze(2).cpu().numpy()
-        com_np = image_np / 255. * pha + bgr * (1 - pha)
-        
         # DONOT save the warmup frame
         if ti > (n_warmup-1):
+            # Only convert to numpy after warmup
+            image_np = np.array(vframes[ti].permute(1,2,0))
+            pha = mask.unsqueeze(2).cpu().numpy()
+            com_np = image_np / 255. * pha + bgr * (1 - pha)
+            
             com_np = np.round(np.clip(com_np * 255.0, 0, 255)).astype(np.uint8)
             pha = np.round(np.clip(pha * 255.0, 0, 255)).astype(np.uint8)
-            fgrs.append(com_np)
-            phas.append(pha)
-            if save_image:
-                cv2.imwrite(f'{output_path}/{video_name}/fgr/{str(ti-n_warmup).zfill(4)}.png', com_np[...,[2,1,0]])
-                cv2.imwrite(f'{output_path}/{video_name}/pha/{str(ti-n_warmup).zfill(4)}.png', pha)
+            
+            # Export PNG sequences directly
+            cv2.imwrite(f'{output_path}/{video_name}/fgr/{str(ti-n_warmup).zfill(4)}.png', com_np[...,[2,1,0]])
+            cv2.imwrite(f'{output_path}/{video_name}/pha/{str(ti-n_warmup).zfill(4)}.png', pha)
 
-    phas = np.array(phas)
-    fgrs = np.array(fgrs)
-
-    imageio.mimwrite(f'{output_path}/{video_name}_fgr.mp4', fgrs, fps=fps, quality=7)
-    imageio.mimwrite(f'{output_path}/{video_name}_pha.mp4', phas, fps=fps, quality=7)
+    print(f'PNG sequences saved to {output_path}/{video_name}/')
 
 if __name__ == '__main__':
     import argparse

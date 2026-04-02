@@ -25,7 +25,7 @@ def gen_erosion(alpha, min_kernel_size, max_kernel_size):
 
 @torch.inference_mode()
 @safe_autocast_decorator()
-def matanyone2(processor, frames_np, mask, r_erode=0, r_dilate=0, n_warmup=10):
+def matanyone2(processor, frames_np, mask, r_erode=0, r_dilate=0, n_warmup=10, return_foreground=True):
     """
     Args:
         frames_np: [(H,W,C)]*n, uint8
@@ -36,7 +36,7 @@ def matanyone2(processor, frames_np, mask, r_erode=0, r_dilate=0, n_warmup=10):
     """
 
     # print(f'===== [r_erode] {r_erode}; [r_dilate] {r_dilate} =====')
-    bgr = (np.array([120, 255, 155], dtype=np.float32)/255).reshape((1, 1, 3))
+    bgr = (np.array([120, 255, 155], dtype=np.float32)/255).reshape((1, 1, 3)) if return_foreground else None
     objects = [1]
 
     # [optional] erode & dilate on given seg mask
@@ -49,7 +49,7 @@ def matanyone2(processor, frames_np, mask, r_erode=0, r_dilate=0, n_warmup=10):
 
     frames_np = [frames_np[0]]* n_warmup + frames_np
 
-    frames = []
+    frames = [] if return_foreground else None
     phas = []
     for ti, frame_single in tqdm.tqdm(enumerate(frames_np)):
         image = to_tensor(frame_single).float().to(device)
@@ -65,13 +65,13 @@ def matanyone2(processor, frames_np, mask, r_erode=0, r_dilate=0, n_warmup=10):
 
         # convert output probabilities to an object mask
         mask = processor.output_prob_to_mask(output_prob)
-
-        pha = mask.unsqueeze(2).detach().to("cpu").numpy()
-        com_np = frame_single / 255. * pha + bgr * (1 - pha)
         
         # DONOT save the warmup frames
         if ti > (n_warmup-1):
-            frames.append((com_np*255).astype(np.uint8))
+            pha = mask.unsqueeze(2).detach().to("cpu").numpy()
             phas.append((pha*255).astype(np.uint8))
+            if return_foreground:
+                com_np = frame_single / 255. * pha + bgr * (1 - pha)
+                frames.append((com_np*255).astype(np.uint8))
     
     return frames, phas

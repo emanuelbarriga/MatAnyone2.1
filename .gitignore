@@ -8,3 +8,5 @@ pretrained_models/
 data/
 notebooks/
 .venv
+venv310/
+.venv310/

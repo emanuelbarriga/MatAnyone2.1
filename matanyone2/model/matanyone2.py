@@ -86,8 +86,6 @@ class MatAnyone2(nn.Module,
         return uncert_output
 
     def encode_image(self, image: torch.Tensor, seq_length=None, last_feats=None) -> (Iterable[torch.Tensor], torch.Tensor): # type: ignore
-        self.pixel_mean = self.pixel_mean.to(device)
-        self.pixel_std = self.pixel_std.to(device)
         image = (image - self.pixel_mean) / self.pixel_std
         ms_image_feat = self.pixel_encoder(image, seq_length) # f16, f8, f4, f2, f1
         return ms_image_feat, self.pix_feat_proj(ms_image_feat[0])

@@ -2,13 +2,19 @@ import contextlib
 import torch
 import functools
 
+# Cache the default device to avoid repeated checks
+_cached_device = None
+
 def get_default_device():
-    if torch.cuda.is_available():
-        return torch.device("cuda")
-    elif torch.backends.mps.is_built() and torch.backends.mps.is_available():
-        return torch.device("mps")
-    else:
-        return torch.device("cpu")
+    global _cached_device
+    if _cached_device is None:
+        if torch.cuda.is_available():
+            _cached_device = torch.device("cuda")
+        elif torch.backends.mps.is_built() and torch.backends.mps.is_available():
+            _cached_device = torch.device("mps")
+        else:
+            _cached_device = torch.device("cpu")
+    return _cached_device
 
 def safe_autocast_decorator(enabled=True):
     def decorator(func):
