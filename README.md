@@ -1,7 +1,8 @@
 <div align="center">
 <div style="text-align: center;">
     <img src="./assets/matanyone2_logo.png" alt="MatAnyone Logo" style="height: 52px;">
-    <h2>Scaling Video Matting via a Learned Quality Evaluator</h2>
+    <h2>MatAnyone 2.1: Optimized Video Matting for Apple Silicon</h2>
+    <h4>An optimized fork with critical memory improvements for Mac Studio and Apple Silicon devices</h4>
 </div>
 
 <div>
@@ -36,7 +37,7 @@
     </h4>
 </div>
 
-<strong>MatAnyone 2 is a practical human video matting framework that preserves fine details by avoiding segmentation-like boundaries, while also shows enhanced robustness under challenging real-world conditions.</strong>
+<strong>MatAnyone 2.1</strong> is an optimized fork of the original MatAnyone 2 framework. It preserves fine details by avoiding segmentation-like boundaries, while adding critical memory optimizations that enable processing videos of <strong>any length</strong> with constant RAM usage on Apple Silicon devices.
 
 <div style="width: 100%; text-align: center; margin:auto;">
     <img style="width:100%" src="assets/teaser.jpg">
@@ -69,10 +70,10 @@
 ## 🔧 Installation
 
 ### Conda
-1. Clone Repo
+1. Clone this optimized Repo
     ```bash
-    git clone https://github.com/pq-yang/MatAnyone2
-    cd MatAnyone2
+    git clone https://github.com/emanuelbarriga/MatAnyone2.1
+    cd MatAnyone2.1
     ```
 
 2. Create Conda Environment and Install Dependencies
@@ -227,8 +228,27 @@ This project is licensed under <a rel="license" href="./LICENSE">NTU S-Lab Licen
 
 ## 👏 Acknowledgement
 
-This project is built upon [MatAnyone](https://github.com/pq-yang/MatAnyone) and [Cutie](https://github.com/hkchengrex/Cutie), with matting dataset files adapted from [RVM](https://github.com/PeterL1n/RobustVideoMatting). The interactive demo is adapted from [ProPainter](https://github.com/sczhou/ProPainter), leveraging segmentation capabilities from [Segment Anything Model](https://github.com/facebookresearch/segment-anything) and [Segment Anything Model 2](https://github.com/facebookresearch/sam2). Thanks for their awesome works!
+### Original Project
+This project is a fork of **[MatAnyone 2](https://github.com/pq-yang/MatAnyone2)** by:
+- [Peiqing Yang](https://pq-yang.github.io/) (S-Lab, NTU)
+- [Shangchen Zhou](https://shangchenzhou.com/) (S-Lab, NTU)
+- [Kai Hao](https://www.linkedin.com/in/kai-hao-794321382/) (S-Lab, NTU)
+- [Qingyi Tao](https://scholar.google.com.sg/citations?user=fMXnSGMAAAAJ&hl=en/) (SenseTime Research)
+
+Paper: [MatAnyone 2: Scaling Video Matting via a Learned Quality Evaluator](https://arxiv.org/abs/2512.11782)
+
+### Optimizations in Version 2.1 (This Fork)
+**Memory & Performance Enhancements:**
+- Disk-based streaming with lazy frame loading (only 5 frames in RAM)
+- Aggressive VRAM cleanup with `gc.collect()` and `torch.mps.empty_cache()`
+- Explicit tensor cleanup to prevent "ghost VRAM"
+- Optimized inference pipeline for Apple Silicon unified memory
+
+### Dependencies
+This project is also built upon [MatAnyone](https://github.com/pq-yang/MatAnyone) and [Cutie](https://github.com/hkchengrex/Cutie), with matting dataset files adapted from [RVM](https://github.com/PeterL1n/RobustVideoMatting). The interactive demo is adapted from [ProPainter](https://github.com/sczhou/ProPainter), leveraging segmentation capabilities from [Segment Anything Model](https://github.com/facebookresearch/segment-anything) and [Segment Anything Model 2](https://github.com/facebookresearch/sam2). Thanks for their awesome works!
 
 ## 📧 Contact
 
-If you have any questions, please feel free to reach us at `peiqingyang99@outlook.com`. 
+For questions about this optimized version, please open an issue in this repository.
+
+For questions about the original MatAnyone 2 project, please contact `peiqingyang99@outlook.com`.
