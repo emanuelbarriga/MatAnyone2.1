@@ -18,7 +18,7 @@
     <sup>1</sup>S-Lab, Nanyang Technological University&emsp; 
     <sup>2</sup>SenseTime Research, Singapore&emsp;
     <br>
-    <sup>3</sup><a href="https://samanestudio.com" target="_blank">Samane Studio</a>&emsp;
+    <sup>3</sup><a href="https://samanestudio.com" target="_blank">Saman Estudio</a>&emsp;
     <br>
     <sup>†</sup>Project lead (Original)
 </div>
@@ -243,7 +243,7 @@ This project is a fork of **[MatAnyone 2](https://github.com/pq-yang/MatAnyone2)
 Paper: [MatAnyone 2: Scaling Video Matting via a Learned Quality Evaluator](https://arxiv.org/abs/2512.11782)
 
 ### Optimizations in Version 2.1 (This Fork)
-**Maintainer:** [Emanuel Barriga](https://github.com/emanuelbarriga) at [Samane Studio](https://samanestudio.com)
+**Maintainer:** [Emanuel Barriga](https://github.com/emanuelbarriga) at [](https://samanestudio.com)
 
 **Memory & Performance Enhancements:**
 - Disk-based streaming with lazy frame loading (only 5 frames in RAM)
