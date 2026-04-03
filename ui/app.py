@@ -131,6 +131,18 @@ class DiskFrameCache:
         
         return self._load_frame(idx)
     
+    def __setitem__(self, idx, value):
+        """Support item assignment - stores in cache (not disk)."""
+        # Convert PIL Image to numpy array if needed
+        if hasattr(value, 'convert'):  # PIL Image
+            value = np.array(value.convert('RGB'))
+        
+        # Simple LRU: remove oldest if cache is full
+        if len(self._cache) >= self._cache_size:
+            oldest_key = next(iter(self._cache))
+            del self._cache[oldest_key]
+        self._cache[idx] = value
+    
     def _load_frame(self, idx):
         if idx in self._cache:
             return self._cache[idx]
@@ -1269,4 +1281,4 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=my_custom_css) as demo:
     gr.Markdown(article)
 
 demo.queue()
-demo.launch(debug=True, share=True, server_name=args.listen, server_port=args.port)
+demo.launch(debug=True, share=False, server_name=args.listen, server_port=args.port)

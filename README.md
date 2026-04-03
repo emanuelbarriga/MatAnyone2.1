@@ -90,7 +90,7 @@
     # install python dependencies
     pip install -e .
     # [optional] install python dependencies for gradio demo
-    pip3 install -r hugging_face/requirements.txt
+    pip3 install -r requirements.txt
     ```
 
 ### uv
@@ -187,7 +187,7 @@ To get rid of the preparation for first-frame segmentation mask, we prepare a gr
 *We integrate MatAnyone Series in the demo. [MatAnyone 2](https://github.com/pq-yang/MatAnyone2) is the default model. You can also choose [MatAnyone](https://github.com/pq-yang/MatAnyone) as your processing model in "Model Selection".*
 
 ```shell
-cd hugging_face
+cd ui
 
 # install GUI dependencies
 pip3 install -r requirements.txt # FFmpeg required
