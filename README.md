@@ -12,10 +12,15 @@
     <a href="https://scholar.google.com.sg/citations?user=fMXnSGMAAAAJ&hl=en/" target='_blank'>Qingyi Tao</a><sup>2</sup>&emsp;
 </div>
 <div>
+    <a href='https://github.com/emanuelbarriga' target='_blank'>Emanuel Barriga</a><sup>3</sup>&emsp;
+</div>
+<div>
     <sup>1</sup>S-Lab, Nanyang Technological University&emsp; 
-    <sup>2</sup>SenseTime Research, Singapore&emsp; 
+    <sup>2</sup>SenseTime Research, Singapore&emsp;
     <br>
-    <sup>†</sup>Project lead
+    <sup>3</sup><a href="https://samanestudio.com" target="_blank">Samane Studio</a>&emsp;
+    <br>
+    <sup>†</sup>Project lead (Original)
 </div>
 
 
@@ -37,7 +42,7 @@
     </h4>
 </div>
 
-<strong>MatAnyone 2.1</strong> is an optimized fork of the original MatAnyone 2 framework. It preserves fine details by avoiding segmentation-like boundaries, while adding critical memory optimizations that enable processing videos of <strong>any length</strong> with constant RAM usage on Apple Silicon devices.
+<strong>MatAnyone 2.1</strong> is an optimized fork by [Emanuel Barriga](https://github.com/emanuelbarriga) at [Samane Studio](https://samanestudio.com) of the original MatAnyone 2 framework. It preserves fine details by avoiding segmentation-like boundaries, while adding critical memory optimizations that enable processing videos of <strong>any length</strong> with constant RAM usage on Apple Silicon devices.
 
 <div style="width: 100%; text-align: center; margin:auto;">
     <img style="width:100%" src="assets/teaser.jpg">
@@ -238,6 +243,8 @@ This project is a fork of **[MatAnyone 2](https://github.com/pq-yang/MatAnyone2)
 Paper: [MatAnyone 2: Scaling Video Matting via a Learned Quality Evaluator](https://arxiv.org/abs/2512.11782)
 
 ### Optimizations in Version 2.1 (This Fork)
+**Maintainer:** [Emanuel Barriga](https://github.com/emanuelbarriga) at [Samane Studio](https://samanestudio.com)
+
 **Memory & Performance Enhancements:**
 - Disk-based streaming with lazy frame loading (only 5 frames in RAM)
 - Aggressive VRAM cleanup with `gc.collect()` and `torch.mps.empty_cache()`
@@ -249,6 +256,10 @@ This project is also built upon [MatAnyone](https://github.com/pq-yang/MatAnyone
 
 ## 📧 Contact
 
-For questions about this optimized version, please open an issue in this repository.
+**For this optimized version (v2.1):**
+- Maintainer: [Emanuel Barriga](https://github.com/emanuelbarriga)
+- Studio: [Samane Studio](https://samanestudio.com)
+- Issues: Please open an issue in this repository
 
-For questions about the original MatAnyone 2 project, please contact `peiqingyang99@outlook.com`.
+**For the original MatAnyone 2 project:**
+- Contact: `peiqingyang99@outlook.com`
